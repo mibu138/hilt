@@ -1,0 +1,5 @@
+template/bin/*
+template/build/*
+template/shaders/spv/*
+template/tags
+template/tanto

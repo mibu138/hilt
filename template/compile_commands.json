@@ -1,0 +1,59 @@
+[
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-Wall",
+            "-Wno-missing-braces",
+            "-Wno-attributes",
+            "-fPIC",
+            "-g",
+            "-DVERBOSE=1",
+            "-I/opt/hfs18.0/toolkit/include/HAPI",
+            "-I/home/michaelb/dev",
+            "-o",
+            "build/render.o",
+            "render.c"
+        ],
+        "directory": "/home/michaelb/dev/hilt/template",
+        "file": "render.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-Wall",
+            "-Wno-missing-braces",
+            "-Wno-attributes",
+            "-fPIC",
+            "-g",
+            "-DVERBOSE=1",
+            "-I/opt/hfs18.0/toolkit/include/HAPI",
+            "-I/home/michaelb/dev",
+            "-o",
+            "build/game.o",
+            "game.c"
+        ],
+        "directory": "/home/michaelb/dev/hilt/template",
+        "file": "game.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-Wall",
+            "-Wno-missing-braces",
+            "-Wno-attributes",
+            "-fPIC",
+            "-g",
+            "-DVERBOSE=1",
+            "-I/opt/hfs18.0/toolkit/include/HAPI",
+            "-I/home/michaelb/dev",
+            "-o",
+            "build/template.o",
+            "template.c"
+        ],
+        "directory": "/home/michaelb/dev/hilt/template",
+        "file": "template.c"
+    }
+]
