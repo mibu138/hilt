@@ -1,3 +1,4 @@
+template/.clangd
 template/bin/*
 template/build/*
 template/shaders/spv/*

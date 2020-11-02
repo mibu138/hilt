@@ -44,36 +44,12 @@ typedef enum {
 static void initRenderTargets(void)
 {
     renderTargetDepth = tanto_v_CreateImage(
-            TANTO_WINDOW_WIDTH, TANTO_WINDOW_HEIGHT,
-            depthFormat,
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-            VK_IMAGE_USAGE_SAMPLED_BIT,
-            VK_IMAGE_ASPECT_DEPTH_BIT,
-            VK_SAMPLE_COUNT_1_BIT);
-}
-
-static void initFrameBuffers(void)
-{
-    for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
-    {
-        const VkImageView attachments[] = {
-            frames[i].swapImage.view, renderTargetDepth.view
-        };
-
-        const VkFramebufferCreateInfo fbi = {
-            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .pNext = NULL,
-            .flags = 0,
-            .renderPass = renderpass,
-            .attachmentCount = 2,
-            .pAttachments = attachments,
-            .width = TANTO_WINDOW_WIDTH,
-            .height = TANTO_WINDOW_HEIGHT,
-            .layers = 1,
-        };
-
-        V_ASSERT( vkCreateFramebuffer(device, &fbi, NULL, &framebuffers[i]) );
-    }
+        TANTO_WINDOW_WIDTH, TANTO_WINDOW_HEIGHT,
+        depthFormat,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+        VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_IMAGE_ASPECT_DEPTH_BIT,
+        VK_SAMPLE_COUNT_1_BIT);
 }
 
 static void initRenderPass(void)
@@ -137,6 +113,30 @@ static void initRenderPass(void)
     };
 
     tanto_r_CreateRenderPass(&rpi, &renderpass);
+}
+
+static void initFrameBuffers(void)
+{
+    for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
+    {
+        const VkImageView attachments[] = {
+            frames[i].swapImage.view, renderTargetDepth.view
+        };
+
+        const VkFramebufferCreateInfo fbi = {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .renderPass = renderpass,
+            .attachmentCount = 2,
+            .pAttachments = attachments,
+            .width = TANTO_WINDOW_WIDTH,
+            .height = TANTO_WINDOW_HEIGHT,
+            .layers = 1,
+        };
+
+        V_ASSERT( vkCreateFramebuffer(device, &fbi, NULL, &framebuffers[i]) );
+    }
 }
 
 static void initPipelines(void)
