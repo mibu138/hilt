@@ -31,8 +31,6 @@ void template_Init(void)
     tanto_v_Init();
     printf("Video initialized\n");
     tanto_v_InitSurfaceXcb(d_XcbWindow.connection, d_XcbWindow.window);
-    tanto_v_InitSwapchain(NULL);
-    printf("Swapchain initialized\n");
     tanto_r_Init();
     printf("Renderer initialized\n");
     tanto_i_Init();
@@ -52,6 +50,12 @@ void template_StartLoop(void)
 
     parms.shouldRun = true;
     parms.renderNeedsUpdate = false;
+    bool presentationSuccess = true;
+
+    for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
+    {
+        r_UpdateRenderCommands(i);
+    }
 
     while( parms.shouldRun ) 
     {
@@ -64,23 +68,29 @@ void template_StartLoop(void)
 
         g_Update();
 
-        if (parms.renderNeedsUpdate || stats.frameCount == 0 ) 
+        if (parms.renderNeedsUpdate)
         {
-            for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
+            tanto_r_WaitOnQueueSubmit();
+            for (int8_t i = 0; i < TANTO_FRAME_COUNT; i++) 
             {
-                if (parms.renderNeedsUpdate)
-                    tanto_r_WaitOnQueueSubmit();
-                tanto_r_RequestFrame();
-                r_UpdateRenderCommands();
-                tanto_r_PresentFrame();
+                r_UpdateRenderCommands(i);
             }
             parms.renderNeedsUpdate = false;
         }
         else
         {
-            tanto_r_RequestFrame();
-            tanto_r_PresentFrame();
+            int8_t frameIndex = tanto_r_RequestFrame();
+            if (frameIndex >= 0) // success
+                presentationSuccess = tanto_r_PresentFrame();
+            else
+            {
+                presentationSuccess = false;
+                printf("Failed to retrieve frame. Likely window resized\n");
+            }
         }
+
+        if (!presentationSuccess)
+            r_RecreateSwapchain();
 
         tanto_TimerStop(&timer);
 

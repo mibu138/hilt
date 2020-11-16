@@ -14,23 +14,18 @@
 #include <tanto/r_raytrace.h>
 #include <tanto/r_renderpass.h>
 #include <tanto/v_command.h>
-#include <vulkan/vulkan_core.h>
 
-#define SPVDIR "/home/michaelb/dev/hilt/template/shaders/spv"
+#define SPVDIR "./shaders/spv"
 
 static Tanto_V_Image renderTargetDepth;
 
 static VkRenderPass  renderpass;
 static VkFramebuffer framebuffers[TANTO_FRAME_COUNT];
+static VkPipeline    mainPipeline;
 
 static Tanto_V_BufferRegion uniformBufferRegion;
 
 static Tanto_R_Primitive triangle;
-
-
-typedef enum {
-    R_PIPE_MAIN,
-} R_PipelineId;
 
 typedef enum {
     R_PIPE_LAYOUT_MAIN,
@@ -41,7 +36,7 @@ typedef enum {
 } R_DescriptorSetId;
 
 // TODO: we should implement a way to specify the offscreen renderpass format at initialization
-static void initRenderTargets(void)
+static void initAttachments(void)
 {
     renderTargetDepth = tanto_v_CreateImage(
         TANTO_WINDOW_WIDTH, TANTO_WINDOW_HEIGHT,
@@ -115,12 +110,13 @@ static void initRenderPass(void)
     tanto_r_CreateRenderPass(&rpi, &renderpass);
 }
 
-static void initFrameBuffers(void)
+static void initFramebuffers(void)
 {
     for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
     {
+        Tanto_R_Frame* frame = tanto_r_GetFrame(i);
         const VkImageView attachments[] = {
-            frames[i].swapImage.view, renderTargetDepth.view
+            frame->swapImage.view, renderTargetDepth.view
         };
 
         const VkFramebufferCreateInfo fbi = {
@@ -139,7 +135,7 @@ static void initFrameBuffers(void)
     }
 }
 
-static void initPipelines(void)
+static void initDescriptorSetsAndPipelineLayouts(void)
 {
     const Tanto_R_DescriptorSet descriptorSets[] = {{
         .id = R_DESC_SET_MAIN,
@@ -159,8 +155,13 @@ static void initPipelines(void)
         .pushConstantsRanges = {}
     }};
 
-    const Tanto_R_PipelineInfo pipeInfos[] = {{
-        .id       = R_PIPE_MAIN,
+    tanto_r_InitDescriptorSets(descriptorSets, TANTO_ARRAY_SIZE(descriptorSets));
+    tanto_r_InitPipelineLayouts(pipelayouts, TANTO_ARRAY_SIZE(pipelayouts));
+}
+
+static void initPipelines(void)
+{
+    const Tanto_R_PipelineInfo pipeInfo = {
         .type     = TANTO_R_PIPELINE_RASTER_TYPE,
         .layoutId = R_PIPE_LAYOUT_MAIN,
         .payload.rasterInfo = {
@@ -170,11 +171,9 @@ static void initPipelines(void)
             .vertShader = SPVDIR"/template-vert.spv",
             .fragShader = SPVDIR"/template-frag.spv"
         }
-    }};
+    };
 
-    tanto_r_InitDescriptorSets(descriptorSets, TANTO_ARRAY_SIZE(descriptorSets));
-    tanto_r_InitPipelineLayouts(pipelayouts, TANTO_ARRAY_SIZE(pipelayouts));
-    tanto_r_InitPipelines(pipeInfos, TANTO_ARRAY_SIZE(pipeInfos));
+    tanto_r_CreatePipeline(&pipeInfo, &mainPipeline);
 }
 
 // descriptors that do only need to have update called once and can be updated on initialization
@@ -217,7 +216,7 @@ static void updateDynamicDescriptors(void)
 
 static void mainRender(const VkCommandBuffer* cmdBuf, const VkRenderPassBeginInfo* rpassInfo)
 {
-    vkCmdBindPipeline(*cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines[R_PIPE_MAIN]);
+    vkCmdBindPipeline(*cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline);
 
     vkCmdBindDescriptorSets(
         *cmdBuf, 
@@ -250,18 +249,19 @@ static void mainRender(const VkCommandBuffer* cmdBuf, const VkRenderPassBeginInf
 
 void r_InitRenderer()
 {
-    initRenderTargets();
+    initAttachments();
     initRenderPass();
-    initFrameBuffers();
+    initFramebuffers();
+    initDescriptorSetsAndPipelineLayouts();
     initPipelines();
     updateStaticDescriptors();
 
     triangle = tanto_r_CreateTriangle();
 }
 
-void r_UpdateRenderCommands(void)
+void r_UpdateRenderCommands(const int8_t frameIndex)
 {
-    Tanto_R_Frame* frame = &frames[curFrameIndex];
+    Tanto_R_Frame* frame = tanto_r_GetFrame(frameIndex);
     vkResetCommandPool(device, frame->commandPool, 0);
     VkCommandBufferBeginInfo cbbi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     V_ASSERT( vkBeginCommandBuffer(frame->commandBuffer, &cbbi) );
@@ -277,12 +277,29 @@ void r_UpdateRenderCommands(void)
         .pClearValues = clears,
         .renderArea = {{0, 0}, {TANTO_WINDOW_WIDTH, TANTO_WINDOW_HEIGHT}},
         .renderPass =  renderpass,
-        .framebuffer = framebuffers[curFrameIndex],
+        .framebuffer = framebuffers[frameIndex],
     };
 
     mainRender(&frame->commandBuffer, &rpassInfo);
 
     V_ASSERT( vkEndCommandBuffer(frame->commandBuffer) );
+}
+
+void r_RecreateSwapchain(void)
+{
+    vkDeviceWaitIdle(device);
+
+    r_CleanUp();
+
+    tanto_r_RecreateSwapchain();
+    initAttachments();
+    initPipelines();
+    initFramebuffers();
+
+    for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
+    {
+        r_UpdateRenderCommands(i);
+    }
 }
 
 void r_CleanUp(void)
@@ -292,4 +309,5 @@ void r_CleanUp(void)
         vkDestroyFramebuffer(device, framebuffers[i], NULL);
     }
     tanto_v_DestroyImage(renderTargetDepth);
+    vkDestroyPipeline(device, mainPipeline, NULL);
 }
