@@ -40,7 +40,7 @@ static void initAttachments(void)
 {
     renderTargetDepth = tanto_v_CreateImage(
         TANTO_WINDOW_WIDTH, TANTO_WINDOW_HEIGHT,
-        depthFormat,
+        tanto_r_GetDepthFormat(),
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
         VK_IMAGE_USAGE_SAMPLED_BIT,
         VK_IMAGE_ASPECT_DEPTH_BIT,
@@ -51,7 +51,7 @@ static void initRenderPass(void)
 {
     const VkAttachmentDescription attachmentColor = {
         .flags = 0,
-        .format = swapFormat,
+        .format = tanto_r_GetSwapFormat(),
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -63,7 +63,7 @@ static void initRenderPass(void)
 
     const VkAttachmentDescription attachmentDepth = {
         .flags = 0,
-        .format = depthFormat,
+        .format = tanto_r_GetDepthFormat(),
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -167,7 +167,8 @@ static void initPipelines(void)
         .payload.rasterInfo = {
             .renderPass = renderpass, 
             .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-            .vertexDescription = tanto_r_GetVertexDescription3D_Simple(),
+            .frontFace   = VK_FRONT_FACE_CLOCKWISE,
+            .vertexDescription = tanto_r_GetVertexDescription3D_2Vec3(),
             .vertShader = SPVDIR"/template-vert.spv",
             .fragShader = SPVDIR"/template-frag.spv"
         }
@@ -181,7 +182,7 @@ static void updateStaticDescriptors(void)
 {
     uniformBufferRegion = tanto_v_RequestBufferRegion(sizeof(UniformBuffer), 
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_GRAPHICS_TYPE);
-    memset(uniformBufferRegion.hostData, 0, sizeof(Parms));
+    memset(uniformBufferRegion.hostData, 0, sizeof(UniformBuffer));
     UniformBuffer* uboData = (UniformBuffer*)(uniformBufferRegion.hostData);
 
     Mat4 view = m_Ident_Mat4();
