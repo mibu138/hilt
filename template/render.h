@@ -5,11 +5,6 @@
 #include "common.h"
 
 typedef struct {
-    int foo;
-    int bar;
-} PushConstants;
-
-typedef struct {
     Mat4 matModel;
     Mat4 matView;
     Mat4 matProj;

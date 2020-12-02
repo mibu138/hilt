@@ -11,8 +11,12 @@ layout(set = 0, binding = 0) uniform Matrices {
     mat4 proj;
 } matrices;
 
+layout(push_constant) uniform PushConstant {
+    vec4 color;
+} push;
+
 void main()
 {
     gl_Position = matrices.proj * matrices.view * matrices.model * vec4(pos, 1.0);
-    outColor = color;
+    outColor = color * push.color.rgb;
 }

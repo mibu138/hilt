@@ -14,6 +14,7 @@
 #include <tanto/r_raytrace.h>
 #include <tanto/r_renderpass.h>
 #include <tanto/v_command.h>
+#include <vulkan/vulkan_core.h>
 
 #define SPVDIR "./shaders/spv"
 
@@ -25,7 +26,12 @@ static VkPipeline    mainPipeline;
 
 static Tanto_V_BufferRegion uniformBufferRegion;
 
+typedef struct {
+    Vec4 color;
+} PushConstant;
+
 static Tanto_R_Primitive triangle;
+static PushConstant      pushConst;
 
 typedef enum {
     R_PIPE_LAYOUT_MAIN,
@@ -147,12 +153,18 @@ static void initDescriptorSetsAndPipelineLayouts(void)
         }}
     }};
 
+    const VkPushConstantRange pcRange = {
+        .offset = 0,
+        .size = sizeof(PushConstant),
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT
+    };
+
     const Tanto_R_PipelineLayout pipelayouts[] = {{
         .id = R_PIPE_LAYOUT_MAIN, 
         .descriptorSetCount = 1, 
         .descriptorSetIds = {R_DESC_SET_MAIN},
-        .pushConstantCount = 0,
-        .pushConstantsRanges = {}
+        .pushConstantCount = 1,
+        .pushConstantsRanges = pcRange
     }};
 
     tanto_r_InitDescriptorSets(descriptorSets, TANTO_ARRAY_SIZE(descriptorSets));
@@ -243,6 +255,9 @@ static void mainRender(const VkCommandBuffer* cmdBuf, const VkRenderPassBeginInf
     vkCmdBindIndexBuffer(*cmdBuf, triangle.indexRegion.buffer, 
             triangle.indexRegion.offset, TANTO_VERT_INDEX_TYPE);
 
+    vkCmdPushConstants(*cmdBuf, pipelineLayouts[R_PIPE_LAYOUT_MAIN], 
+            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstant), &pushConst);
+
     vkCmdDrawIndexed(*cmdBuf, triangle.indexCount, 1, 0, 0, 0);
 
     vkCmdEndRenderPass(*cmdBuf);
@@ -258,6 +273,7 @@ void r_InitRenderer()
     updateStaticDescriptors();
 
     triangle = tanto_r_CreateTriangle();
+    pushConst.color = (Vec4){0.1, 0.3, 0.9, 1.};
 }
 
 void r_UpdateRenderCommands(const int8_t frameIndex)
@@ -309,6 +325,6 @@ void r_CleanUp(void)
     {
         vkDestroyFramebuffer(device, framebuffers[i], NULL);
     }
-    tanto_v_DestroyImage(renderTargetDepth);
+    tanto_v_FreeImage(&renderTargetDepth);
     vkDestroyPipeline(device, mainPipeline, NULL);
 }
