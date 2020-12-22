@@ -1,8 +1,8 @@
 #include "game.h"
 #include "render.h"
 #include "common.h"
-#include "tanto/m_math.h"
 #include "tanto/t_utils.h"
+#include <coal/coal.h>
 #include <assert.h>
 #include <string.h>
 #include <tanto/t_def.h>

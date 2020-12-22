@@ -20,13 +20,13 @@
 
 void template_Init(void)
 {
-    tanto_v_config.rayTraceEnabled = true;
+    tanto_v_config.rayTraceEnabled = false;
 #ifndef NDEBUG
     tanto_v_config.validationEnabled = true;
 #else
     tanto_v_config.validationEnabled = false;
 #endif
-    tanto_d_Init();
+    tanto_d_Init(NULL);
     printf("Display initialized\n");
     tanto_v_Init();
     printf("Video initialized\n");

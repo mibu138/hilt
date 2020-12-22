@@ -1,5 +1,4 @@
 #include "render.h"
-#include "tanto/m_math.h"
 #include "tanto/v_image.h"
 #include "tanto/v_memory.h"
 #include <memory.h>
