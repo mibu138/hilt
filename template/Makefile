@@ -33,7 +33,7 @@ debug: all
 release: CFLAGS += -DNDEBUG -O3
 release: all
 
-all: bin lib tags shaders
+all: tanto bin lib tags shaders
 
 FRAGS := $(patsubst %.frag,$(SPV)/%-frag.spv,$(notdir $(wildcard $(GLSL)/*.frag)))
 VERTS := $(patsubst %.vert,$(SPV)/%-vert.spv,$(notdir $(wildcard $(GLSL)/*.vert)))
@@ -45,6 +45,10 @@ clean:
 
 tags:
 	ctags -R .
+
+.PHONY: tanto
+tanto:
+	make -C tanto/ 
 
 bin: main.c $(OBJS) $(DEPS) shaders
 	$(CC) $(CFLAGS) $(INFLAGS) $(LDFLAGS) $(OBJS) $< -o $(BIN)/$(NAME) $(LIBS)

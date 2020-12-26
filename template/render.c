@@ -32,6 +32,10 @@ typedef struct {
 static Tanto_R_Primitive triangle;
 static PushConstant      pushConst;
 
+static Tanto_R_Description description;
+
+static VkPipelineLayout pipelineLayout;
+
 typedef enum {
     R_PIPE_LAYOUT_MAIN,
 } R_PipelineLayoutId;
@@ -142,8 +146,7 @@ static void initFramebuffers(void)
 
 static void initDescriptorSetsAndPipelineLayouts(void)
 {
-    const Tanto_R_DescriptorSet descriptorSets[] = {{
-        .id = R_DESC_SET_MAIN,
+    const Tanto_R_DescriptorSetInfo descriptorSets[] = {{
         .bindingCount = 1,
         .bindings = {{
             .descriptorCount = 1,
@@ -152,22 +155,23 @@ static void initDescriptorSetsAndPipelineLayouts(void)
         }}
     }};
 
+    const uint8_t descSetCount = TANTO_ARRAY_SIZE(descriptorSets);
+    tanto_r_CreateDescriptorSets(descSetCount, descriptorSets, &description);
+
     const VkPushConstantRange pcRange = {
         .offset = 0,
         .size = sizeof(PushConstant),
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT
     };
 
-    const Tanto_R_PipelineLayout pipelayouts[] = {{
-        .id = R_PIPE_LAYOUT_MAIN, 
+    const Tanto_R_PipelineLayoutInfo pipeLayoutInfos[] = {{
         .descriptorSetCount = 1, 
-        .descriptorSetIds = {R_DESC_SET_MAIN},
+        .descriptorSetLayouts = description.descriptorSetLayouts,
         .pushConstantCount = 1,
-        .pushConstantsRanges = pcRange
+        .pushConstantsRanges = &pcRange
     }};
 
-    tanto_r_InitDescriptorSets(descriptorSets, TANTO_ARRAY_SIZE(descriptorSets));
-    tanto_r_InitPipelineLayouts(pipelayouts, TANTO_ARRAY_SIZE(pipelayouts));
+    tanto_r_CreatePipelineLayouts(1, pipeLayoutInfos, &pipelineLayout);
 }
 
 static void initPipelines(void)
@@ -177,6 +181,7 @@ static void initPipelines(void)
         .layoutId = R_PIPE_LAYOUT_MAIN,
         .payload.rasterInfo = {
             .renderPass = renderpass, 
+            .layout     = pipelineLayout,
             .sampleCount = VK_SAMPLE_COUNT_1_BIT,
             .frontFace   = VK_FRONT_FACE_CLOCKWISE,
             .vertexDescription = tanto_r_GetVertexDescription3D_2Vec3(),
@@ -212,7 +217,7 @@ static void updateStaticDescriptors(void)
     VkWriteDescriptorSet writes[] = {{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .dstArrayElement = 0,
-        .dstSet = descriptorSets[R_DESC_SET_MAIN],
+        .dstSet = description.descriptorSets[R_DESC_SET_MAIN],
         .dstBinding = 0,
         .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -233,8 +238,8 @@ static void mainRender(const VkCommandBuffer* cmdBuf, const VkRenderPassBeginInf
     vkCmdBindDescriptorSets(
         *cmdBuf, 
         VK_PIPELINE_BIND_POINT_GRAPHICS, 
-        pipelineLayouts[R_PIPE_LAYOUT_MAIN], 
-        0, 1, &descriptorSets[R_DESC_SET_MAIN],
+        pipelineLayout,
+        0, 1, &description.descriptorSets[R_DESC_SET_MAIN],
         0, NULL);
 
     vkCmdBeginRenderPass(*cmdBuf, rpassInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -254,7 +259,7 @@ static void mainRender(const VkCommandBuffer* cmdBuf, const VkRenderPassBeginInf
     vkCmdBindIndexBuffer(*cmdBuf, triangle.indexRegion.buffer, 
             triangle.indexRegion.offset, TANTO_VERT_INDEX_TYPE);
 
-    vkCmdPushConstants(*cmdBuf, pipelineLayouts[R_PIPE_LAYOUT_MAIN], 
+    vkCmdPushConstants(*cmdBuf, pipelineLayout, 
             VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstant), &pushConst);
 
     vkCmdDrawIndexed(*cmdBuf, triangle.indexCount, 1, 0, 0, 0);
