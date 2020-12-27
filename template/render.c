@@ -176,21 +176,17 @@ static void initDescriptorSetsAndPipelineLayouts(void)
 
 static void initPipelines(void)
 {
-    const Tanto_R_PipelineInfo pipeInfo = {
-        .type     = TANTO_R_PIPELINE_RASTER_TYPE,
-        .layoutId = R_PIPE_LAYOUT_MAIN,
-        .payload.rasterInfo = {
-            .renderPass = renderpass, 
-            .layout     = pipelineLayout,
-            .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-            .frontFace   = VK_FRONT_FACE_CLOCKWISE,
-            .vertexDescription = tanto_r_GetVertexDescription3D_2Vec3(),
-            .vertShader = SPVDIR"/template-vert.spv",
-            .fragShader = SPVDIR"/template-frag.spv"
-        }
+    const Tanto_R_GraphicsPipelineInfo graphPipeInfo = {
+        .renderPass = renderpass, 
+        .layout     = pipelineLayout,
+        .sampleCount = VK_SAMPLE_COUNT_1_BIT,
+        .frontFace   = VK_FRONT_FACE_CLOCKWISE,
+        .vertexDescription = tanto_r_GetVertexDescription3D_2Vec3(),
+        .vertShader = SPVDIR"/template-vert.spv",
+        .fragShader = SPVDIR"/template-frag.spv"
     };
 
-    tanto_r_CreatePipeline(&pipeInfo, &mainPipeline);
+    tanto_r_CreateGraphicsPipelines(1, &graphPipeInfo, &mainPipeline);
 }
 
 // descriptors that do only need to have update called once and can be updated on initialization
