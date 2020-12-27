@@ -21,18 +21,18 @@ void g_Init(void)
     t = 0.0;
 }
 
-void g_Responder(const Tanto_I_Event *event)
+bool g_Responder(const Tanto_I_Event *event)
 {
     switch (event->type) 
     {
         case TANTO_I_KEYDOWN: switch (event->data.keyCode)
         {
             case TANTO_KEY_ESC: parms.shouldRun = false; break;
-            default: return;
+            default: return true;
         } break;
         case TANTO_I_KEYUP:   switch (event->data.keyCode)
         {
-            default: return;
+            default: return true;
         } break;
         case TANTO_I_MOTION: 
         {
@@ -47,6 +47,7 @@ void g_Responder(const Tanto_I_Event *event)
         } break;
         default: break;
     }
+    return false;
 }
 
 void g_Update(void)

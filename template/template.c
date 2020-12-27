@@ -27,14 +27,10 @@ void template_Init(void)
     tanto_v_config.validationEnabled = false;
 #endif
     tanto_d_Init(NULL);
-    printf("Display initialized\n");
     tanto_v_Init();
-    printf("Video initialized\n");
     tanto_v_InitSurfaceXcb(d_XcbWindow.connection, d_XcbWindow.window);
     tanto_r_Init();
-    printf("Renderer initialized\n");
     tanto_i_Init();
-    printf("Input initialized\n");
     tanto_i_Subscribe(g_Responder);
     r_InitRenderer();
     g_Init();
@@ -42,11 +38,7 @@ void template_Init(void)
 
 void template_StartLoop(void)
 {
-    Tanto_Timer     timer;
-    Tanto_LoopStats stats;
-
-    tanto_TimerInit(&timer);
-    tanto_LoopStatsInit(&stats);
+    Tanto_LoopData loopData = tanto_CreateLoopData(NS_TARGET, 0, 0);
 
     parms.shouldRun = true;
     parms.renderNeedsUpdate = false;
@@ -59,7 +51,7 @@ void template_StartLoop(void)
 
     while( parms.shouldRun ) 
     {
-        tanto_TimerStart(&timer);
+        tanto_FrameStart(&loopData);
 
         tanto_i_GetEvents();
         tanto_i_ProcessEvents();
@@ -92,12 +84,6 @@ void template_StartLoop(void)
         if (!presentationSuccess)
             r_RecreateSwapchain();
 
-        tanto_TimerStop(&timer);
-
-        tanto_LoopStatsUpdate(&timer, &stats);
-
-        printf("Delta ns: %ld\n", stats.nsDelta);
-
-        tanto_LoopSleep(&stats, NS_TARGET);
+        tanto_FrameEnd(&loopData);
     }
 }
