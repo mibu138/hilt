@@ -302,13 +302,13 @@ void r_InitRenderer()
 void r_UpdateRenderCommands(const int8_t frameIndex)
 {
     Tanto_R_Frame* frame = tanto_r_GetFrame(frameIndex);
-    vkResetCommandPool(device, frame->commandPool, 0);
+    vkResetCommandPool(device, frame->command.commandPool, 0);
     VkCommandBufferBeginInfo cbbi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    V_ASSERT( vkBeginCommandBuffer(frame->commandBuffer, &cbbi) );
+    V_ASSERT( vkBeginCommandBuffer(frame->command.commandBuffer, &cbbi) );
 
-    mainRender(frame->commandBuffer, frameIndex);
+    mainRender(frame->command.commandBuffer, frameIndex);
 
-    V_ASSERT( vkEndCommandBuffer(frame->commandBuffer) );
+    V_ASSERT( vkEndCommandBuffer(frame->command.commandBuffer) );
 }
 
 void r_CleanUp(void)

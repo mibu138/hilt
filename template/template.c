@@ -44,7 +44,6 @@ void template_StartLoop(void)
 
     parms.shouldRun = true;
     parms.renderNeedsUpdate = false;
-    bool presentationSuccess = true;
 
     for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
     {
@@ -55,7 +54,7 @@ void template_StartLoop(void)
     {
         tanto_FrameStart(&loopData);
 
-        int8_t frameIndex = tanto_r_RequestFrame();
+        tanto_r_RequestFrame();
 
         tanto_i_GetEvents();
         tanto_i_ProcessEvents();
@@ -64,8 +63,8 @@ void template_StartLoop(void)
 
         g_Update();
 
-        if (frameIndex >= 0) // success
-            presentationSuccess = tanto_r_PresentFrame();
+        tanto_r_SubmitFrame();
+        tanto_r_PresentFrame();
 
         tanto_FrameEnd(&loopData);
     }
