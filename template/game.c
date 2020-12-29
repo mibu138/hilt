@@ -7,11 +7,14 @@
 #include <string.h>
 #include <tanto/t_def.h>
 #include <tanto/i_input.h>
+#include <tanto/u_ui.h>
 
 
 static Vec2  mousePos;
 Parms parms; 
 struct ShaderParms* pShaderParms;
+
+Tanto_U_Widget* slider0;
 
 static float t;
 
@@ -19,6 +22,7 @@ void g_Init(void)
 {
     parms.shouldRun = true;
     t = 0.0;
+    slider0 = tanto_u_CreateSlider(0, 40, NULL);
 }
 
 bool g_Responder(const Tanto_I_Event *event)

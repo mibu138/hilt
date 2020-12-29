@@ -15,6 +15,7 @@
 #include <tanto/r_render.h>
 #include <tanto/t_utils.h>
 #include <tanto/i_input.h>
+#include <tanto/u_ui.h>
 
 #define NS_TARGET 16666666 // 1 / 60 seconds
 
@@ -31,6 +32,7 @@ void template_Init(void)
     tanto_v_InitSurfaceXcb(d_XcbWindow.connection, d_XcbWindow.window);
     tanto_r_Init();
     tanto_i_Init();
+    tanto_u_Init();
     tanto_i_Subscribe(g_Responder);
     r_InitRenderer();
     g_Init();
