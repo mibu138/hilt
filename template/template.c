@@ -81,9 +81,6 @@ void template_StartLoop(void)
             }
         }
 
-        if (!presentationSuccess)
-            r_RecreateSwapchain();
-
         tanto_FrameEnd(&loopData);
     }
 }

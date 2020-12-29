@@ -1,4 +1,5 @@
 #include "render.h"
+#include "tanto/r_geo.h"
 #include "tanto/v_image.h"
 #include "tanto/v_memory.h"
 #include <memory.h>
@@ -23,7 +24,7 @@ static VkRenderPass  renderpass;
 static VkFramebuffer framebuffers[TANTO_FRAME_COUNT];
 static VkPipeline    mainPipeline;
 
-static Tanto_V_BufferRegion uniformBufferRegion;
+static Tanto_V_BufferRegion uniformBufferRegion[TANTO_FRAME_COUNT];
 
 typedef struct {
     Vec4 color;
@@ -32,7 +33,8 @@ typedef struct {
 static Tanto_R_Primitive triangle;
 static PushConstant      pushConst;
 
-static Tanto_R_Description description;
+static VkDescriptorSetLayout descriptorSetLayouts[TANTO_MAX_DESCRIPTOR_SETS];
+static Tanto_R_Description   description[TANTO_FRAME_COUNT];
 
 static VkPipelineLayout pipelineLayout;
 
@@ -156,7 +158,12 @@ static void initDescriptorSetsAndPipelineLayouts(void)
     }};
 
     const uint8_t descSetCount = TANTO_ARRAY_SIZE(descriptorSets);
-    tanto_r_CreateDescriptorSets(descSetCount, descriptorSets, &description);
+    tanto_r_CreateDescriptorSetLayouts(descSetCount, descriptorSets, descriptorSetLayouts);
+
+    for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
+    {
+        tanto_r_CreateDescriptorSets(descSetCount, descriptorSets, descriptorSetLayouts, &description[i]);
+    }
 
     const VkPushConstantRange pcRange = {
         .offset = 0,
@@ -166,7 +173,7 @@ static void initDescriptorSetsAndPipelineLayouts(void)
 
     const Tanto_R_PipelineLayoutInfo pipeLayoutInfos[] = {{
         .descriptorSetCount = 1, 
-        .descriptorSetLayouts = description.descriptorSetLayouts,
+        .descriptorSetLayouts = descriptorSetLayouts,
         .pushConstantCount = 1,
         .pushConstantsRanges = &pcRange
     }};
@@ -190,99 +197,44 @@ static void initPipelines(void)
 }
 
 // descriptors that do only need to have update called once and can be updated on initialization
-static void updateStaticDescriptors(void)
+static void updateDescriptors(void)
 {
-    uniformBufferRegion = tanto_v_RequestBufferRegion(sizeof(UniformBuffer), 
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_GRAPHICS_TYPE);
-    memset(uniformBufferRegion.hostData, 0, sizeof(UniformBuffer));
-    UniformBuffer* uboData = (UniformBuffer*)(uniformBufferRegion.hostData);
+    for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
+    {
+        uniformBufferRegion[i] = tanto_v_RequestBufferRegion(sizeof(UniformBuffer), 
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_GRAPHICS_TYPE);
+        memset(uniformBufferRegion[i].hostData, 0, sizeof(UniformBuffer));
+        UniformBuffer* uboData = (UniformBuffer*)(uniformBufferRegion[i].hostData);
 
-    Mat4 view = m_Ident_Mat4();
-    view = m_Translate_Mat4((Vec3){0, 0, -1}, &view);
+        Mat4 view = m_Ident_Mat4();
+        view = m_Translate_Mat4((Vec3){0, 0, -1}, &view);
 
-    uboData->matModel = m_Ident_Mat4();
-    uboData->matView  = view;
-    uboData->matProj  = m_BuildPerspective(0.001, 100);
+        uboData->matModel = m_Ident_Mat4();
+        uboData->matView  = view;
+        uboData->matProj  = m_BuildPerspective(0.001, 100);
 
-    VkDescriptorBufferInfo uboInfo = {
-        .buffer = uniformBufferRegion.buffer,
-        .offset = uniformBufferRegion.offset,
-        .range  = uniformBufferRegion.size
-    };
+        VkDescriptorBufferInfo uboInfo = {
+            .buffer = uniformBufferRegion[i].buffer,
+            .offset = uniformBufferRegion[i].offset,
+            .range  = uniformBufferRegion[i].size
+        };
 
-    VkWriteDescriptorSet writes[] = {{
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstArrayElement = 0,
-        .dstSet = description.descriptorSets[R_DESC_SET_MAIN],
-        .dstBinding = 0,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .pBufferInfo = &uboInfo
-    }};
+        VkWriteDescriptorSet writes[] = {{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstArrayElement = 0,
+            .dstSet = description[i].descriptorSets[R_DESC_SET_MAIN],
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pBufferInfo = &uboInfo
+        }};
 
-    vkUpdateDescriptorSets(device, TANTO_ARRAY_SIZE(writes), writes, 0, NULL);
+        vkUpdateDescriptorSets(device, TANTO_ARRAY_SIZE(writes), writes, 0, NULL);
+    }
 }
 
-static void updateDynamicDescriptors(void)
+static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex)
 {
-}
-
-static void mainRender(const VkCommandBuffer* cmdBuf, const VkRenderPassBeginInfo* rpassInfo)
-{
-    vkCmdBindPipeline(*cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline);
-
-    vkCmdBindDescriptorSets(
-        *cmdBuf, 
-        VK_PIPELINE_BIND_POINT_GRAPHICS, 
-        pipelineLayout,
-        0, 1, &description.descriptorSets[R_DESC_SET_MAIN],
-        0, NULL);
-
-    vkCmdBeginRenderPass(*cmdBuf, rpassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    const VkBuffer vertBuffers[2] = {
-        triangle.vertexRegion.buffer,
-        triangle.vertexRegion.buffer
-    };
-
-    const VkDeviceSize attrOffsets[2] = {
-        triangle.attrOffsets[0] + triangle.vertexRegion.offset,
-        triangle.attrOffsets[1] + triangle.vertexRegion.offset,
-    };
-
-    vkCmdBindVertexBuffers(*cmdBuf, 0, 2, vertBuffers, attrOffsets);
-
-    vkCmdBindIndexBuffer(*cmdBuf, triangle.indexRegion.buffer, 
-            triangle.indexRegion.offset, TANTO_VERT_INDEX_TYPE);
-
-    vkCmdPushConstants(*cmdBuf, pipelineLayout, 
-            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstant), &pushConst);
-
-    vkCmdDrawIndexed(*cmdBuf, triangle.indexCount, 1, 0, 0, 0);
-
-    vkCmdEndRenderPass(*cmdBuf);
-}
-
-void r_InitRenderer()
-{
-    initAttachments();
-    initRenderPass();
-    initFramebuffers();
-    initDescriptorSetsAndPipelineLayouts();
-    initPipelines();
-    updateStaticDescriptors();
-
-    triangle = tanto_r_CreateTriangle();
-    pushConst.color = (Vec4){0.1, 0.3, 0.9, 1.};
-}
-
-void r_UpdateRenderCommands(const int8_t frameIndex)
-{
-    Tanto_R_Frame* frame = tanto_r_GetFrame(frameIndex);
-    vkResetCommandPool(device, frame->commandPool, 0);
-    VkCommandBufferBeginInfo cbbi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    V_ASSERT( vkBeginCommandBuffer(frame->commandBuffer, &cbbi) );
-
     VkClearValue clearValueColor = {0.002f, 0.023f, 0.009f, 1.0f};
     VkClearValue clearValueDepth = {1.0, 0};
 
@@ -297,18 +249,31 @@ void r_UpdateRenderCommands(const int8_t frameIndex)
         .framebuffer = framebuffers[frameIndex],
     };
 
-    mainRender(&frame->commandBuffer, &rpassInfo);
+    vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline);
 
-    V_ASSERT( vkEndCommandBuffer(frame->commandBuffer) );
+    vkCmdBindDescriptorSets(
+        cmdBuf, 
+        VK_PIPELINE_BIND_POINT_GRAPHICS, 
+        pipelineLayout,
+        0, 1, &description[frameIndex].descriptorSets[R_DESC_SET_MAIN],
+        0, NULL);
+
+    vkCmdBeginRenderPass(cmdBuf, &rpassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    tanto_r_BindPrim(cmdBuf, &triangle);
+
+    vkCmdPushConstants(cmdBuf, pipelineLayout, 
+            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstant), &pushConst);
+
+    vkCmdDrawIndexed(cmdBuf, triangle.indexCount, 1, 0, 0, 0);
+
+    vkCmdEndRenderPass(cmdBuf);
 }
 
-void r_RecreateSwapchain(void)
+static void onSwapchainRecreate(void)
 {
-    vkDeviceWaitIdle(device);
-
     r_CleanUp();
 
-    tanto_r_RecreateSwapchain();
     initAttachments();
     initPipelines();
     initFramebuffers();
@@ -317,6 +282,33 @@ void r_RecreateSwapchain(void)
     {
         r_UpdateRenderCommands(i);
     }
+}
+
+void r_InitRenderer()
+{
+    initAttachments();
+    initRenderPass();
+    initFramebuffers();
+    initDescriptorSetsAndPipelineLayouts();
+    initPipelines();
+    updateDescriptors();
+
+    tanto_r_RegisterSwapchainRecreationFn(onSwapchainRecreate);
+
+    triangle = tanto_r_CreateTriangle();
+    pushConst.color = (Vec4){0.1, 0.3, 0.9, 1.};
+}
+
+void r_UpdateRenderCommands(const int8_t frameIndex)
+{
+    Tanto_R_Frame* frame = tanto_r_GetFrame(frameIndex);
+    vkResetCommandPool(device, frame->commandPool, 0);
+    VkCommandBufferBeginInfo cbbi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    V_ASSERT( vkBeginCommandBuffer(frame->commandBuffer, &cbbi) );
+
+    mainRender(frame->commandBuffer, frameIndex);
+
+    V_ASSERT( vkEndCommandBuffer(frame->commandBuffer) );
 }
 
 void r_CleanUp(void)
