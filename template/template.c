@@ -32,7 +32,7 @@ void template_Init(void)
     tanto_v_InitSurfaceXcb(d_XcbWindow.connection, d_XcbWindow.window);
     tanto_r_Init();
     tanto_i_Init();
-    tanto_u_Init();
+    tanto_u_Init(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     tanto_i_Subscribe(g_Responder);
     r_InitRenderer();
     g_Init();
@@ -40,15 +40,9 @@ void template_Init(void)
 
 void template_StartLoop(void)
 {
-    Tanto_LoopData loopData = tanto_CreateLoopData(NS_TARGET, 0, 0);
+    Tanto_LoopData loopData = tanto_CreateLoopData(NS_TARGET, 1, 0);
 
     parms.shouldRun = true;
-    parms.renderNeedsUpdate = false;
-
-    for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
-    {
-        r_UpdateRenderCommands(i);
-    }
 
     while( parms.shouldRun ) 
     {
@@ -59,11 +53,10 @@ void template_StartLoop(void)
         tanto_i_GetEvents();
         tanto_i_ProcessEvents();
 
-        //r_WaitOnQueueSubmit(); // possibly don't need this due to render pass
-
         g_Update();
+        r_Render();
 
-        tanto_r_SubmitFrame();
+        tanto_u_Render();
         tanto_r_PresentFrame();
 
         tanto_FrameEnd(&loopData);

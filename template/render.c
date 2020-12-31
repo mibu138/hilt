@@ -13,6 +13,7 @@
 #include <tanto/r_pipeline.h>
 #include <tanto/r_raytrace.h>
 #include <tanto/r_renderpass.h>
+#include <tanto/r_renderpass.h>
 #include <tanto/v_command.h>
 #include <vulkan/vulkan_core.h>
 
@@ -60,65 +61,10 @@ static void initAttachments(void)
 
 static void initRenderPass(void)
 {
-    const VkAttachmentDescription attachmentColor = {
-        .flags = 0,
-        .format = tanto_r_GetSwapFormat(),
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-    };
-
-    const VkAttachmentDescription attachmentDepth = {
-        .flags = 0,
-        .format = tanto_r_GetDepthFormat(),
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    };
-
-    const VkAttachmentDescription attachments[] = {
-        attachmentColor, attachmentDepth
-    };
-
-    VkAttachmentReference colorReference = {
-        .attachment = 0,
-        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    };
-
-    VkAttachmentReference depthReference = {
-        .attachment = 1,
-        .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    };
-
-    const VkSubpassDescription subpass = {
-        .flags                   = 0,
-        .pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .inputAttachmentCount    = 0,
-        .pInputAttachments       = NULL,
-        .colorAttachmentCount    = 1,
-        .pColorAttachments       = &colorReference,
-        .pResolveAttachments     = NULL,
-        .pDepthStencilAttachment = &depthReference,
-        .preserveAttachmentCount = 0,
-        .pPreserveAttachments    = NULL,
-    };
-
-    Tanto_R_RenderPassInfo rpi = {
-        .attachmentCount = 2,
-        .pAttachments = attachments,
-        .subpassCount = 1,
-        .pSubpasses = &subpass,
-    };
-
-    tanto_r_CreateRenderPass(&rpi, &renderpass);
+    tanto_r_CreateRenderPass_ColorDepth(VK_ATTACHMENT_LOAD_OP_CLEAR, 
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 
+            tanto_r_GetSwapFormat(), tanto_r_GetDepthFormat(), 
+            &renderpass);
 }
 
 static void initFramebuffers(void)
@@ -270,21 +216,27 @@ static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex)
     vkCmdEndRenderPass(cmdBuf);
 }
 
+static void updateRenderCommands(const uint32_t frameIndex)
+{
+    Tanto_R_Frame* frame = tanto_r_GetFrame(frameIndex);
+    vkResetCommandPool(device, frame->command.commandPool, 0);
+    VkCommandBufferBeginInfo cbbi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    V_ASSERT( vkBeginCommandBuffer(frame->command.commandBuffer, &cbbi) );
+
+    mainRender(frame->command.commandBuffer, frameIndex);
+
+    V_ASSERT( vkEndCommandBuffer(frame->command.commandBuffer) );
+}
+
 static void onSwapchainRecreate(void)
 {
     r_CleanUp();
-
     initAttachments();
     initPipelines();
     initFramebuffers();
-
-    for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
-    {
-        r_UpdateRenderCommands(i);
-    }
 }
 
-void r_InitRenderer()
+void r_InitRenderer(void)
 {
     initAttachments();
     initRenderPass();
@@ -299,16 +251,16 @@ void r_InitRenderer()
     pushConst.color = (Vec4){0.1, 0.3, 0.9, 1.};
 }
 
-void r_UpdateRenderCommands(const int8_t frameIndex)
+void r_Render(void)
 {
-    Tanto_R_Frame* frame = tanto_r_GetFrame(frameIndex);
-    vkResetCommandPool(device, frame->command.commandPool, 0);
-    VkCommandBufferBeginInfo cbbi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    V_ASSERT( vkBeginCommandBuffer(frame->command.commandBuffer, &cbbi) );
-
-    mainRender(frame->command.commandBuffer, frameIndex);
-
-    V_ASSERT( vkEndCommandBuffer(frame->command.commandBuffer) );
+    if (tanto_r_FramesNeedingUpdate)
+    {
+        uint32_t i = tanto_r_GetCurrentFrameIndex();
+        tanto_r_WaitOnFrame(i);
+        updateRenderCommands(i);
+        tanto_r_FramesNeedingUpdate--;
+    }
+    tanto_r_SubmitFrame();
 }
 
 void r_CleanUp(void)

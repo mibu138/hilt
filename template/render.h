@@ -11,9 +11,9 @@ typedef struct {
 } UniformBuffer;
 
 void  r_InitRenderer(void);
-void  r_UpdateRenderCommands(const int8_t frameIndex);
 void  r_LoadMesh(Tanto_R_Mesh mesh);
 void  r_ClearMesh(void);
+void  r_Render(void);
 void  r_CleanUp(void);
 const Tanto_R_Mesh* r_GetMesh(void);
 
