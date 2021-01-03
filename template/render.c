@@ -1,4 +1,6 @@
 #include "render.h"
+#include "coal/m_math.h"
+#include "coal/util.h"
 #include "tanto/r_geo.h"
 #include "tanto/v_image.h"
 #include "tanto/v_memory.h"
@@ -25,14 +27,26 @@ static VkRenderPass  renderpass;
 static VkFramebuffer framebuffers[TANTO_FRAME_COUNT];
 static VkPipeline    mainPipeline;
 
-static Tanto_V_BufferRegion uniformBufferRegion[TANTO_FRAME_COUNT];
+static Tanto_V_BufferRegion cameraBuffers[TANTO_FRAME_COUNT];
+static Tanto_V_BufferRegion xformBuffers[TANTO_FRAME_COUNT];
+
+static int cameraNeedsUpdate;
+
+typedef Mat4 Xform;
 
 typedef struct {
-    Vec4 color;
+    Mat4 view;
+    Mat4 proj;
+} Camera;
+
+typedef struct {
+    Vec4 vec4_0;
+    Vec4 vec4_1;
 } PushConstant;
 
-static Tanto_R_Primitive triangle;
-static PushConstant      pushConst;
+static Tanto_R_Primitive    triangle;
+static const Tanto_S_Scene* scene;
+static PushConstant         pushConst;
 
 static VkDescriptorSetLayout descriptorSetLayouts[TANTO_MAX_DESCRIPTOR_SETS];
 static Tanto_R_Description   description[TANTO_FRAME_COUNT];
@@ -40,12 +54,12 @@ static Tanto_R_Description   description[TANTO_FRAME_COUNT];
 static VkPipelineLayout pipelineLayout;
 
 typedef enum {
-    R_PIPE_LAYOUT_MAIN,
-} R_PipelineLayoutId;
+    PIPE_LAYOUT_MAIN,
+} PipelineLayoutId;
 
 typedef enum {
-    R_DESC_SET_MAIN,
-} R_DescriptorSetId;
+    DESC_SET_MAIN,
+} DescriptorSetId;
 
 // TODO: we should implement a way to specify the offscreen renderpass format at initialization
 static void initAttachments(void)
@@ -95,8 +109,12 @@ static void initFramebuffers(void)
 static void initDescriptorSetsAndPipelineLayouts(void)
 {
     const Tanto_R_DescriptorSetInfo descriptorSets[] = {{
-        .bindingCount = 1,
+        .bindingCount = 2,
         .bindings = {{
+            .descriptorCount = 1,
+            .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT
+        },{
             .descriptorCount = 1,
             .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .stageFlags = VK_SHADER_STAGE_VERTEX_BIT
@@ -111,17 +129,25 @@ static void initDescriptorSetsAndPipelineLayouts(void)
         tanto_r_CreateDescriptorSets(descSetCount, descriptorSets, descriptorSetLayouts, &description[i]);
     }
 
-    const VkPushConstantRange pcRange = {
+    const VkPushConstantRange pcRangeVert = {
         .offset = 0,
-        .size = sizeof(PushConstant),
+        .size = sizeof(Vec4),
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT
     };
+
+    const VkPushConstantRange pcRangeFrag = {
+        .offset = sizeof(Vec4),
+        .size = sizeof(Vec4),
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+    };
+
+    const VkPushConstantRange ranges[] = {pcRangeVert, pcRangeFrag};
 
     const Tanto_R_PipelineLayoutInfo pipeLayoutInfos[] = {{
         .descriptorSetCount = 1, 
         .descriptorSetLayouts = descriptorSetLayouts,
-        .pushConstantCount = 1,
-        .pushConstantsRanges = &pcRange
+        .pushConstantCount = TANTO_ARRAY_SIZE(ranges),
+        .pushConstantsRanges = ranges
     }};
 
     tanto_r_CreatePipelineLayouts(1, pipeLayoutInfos, &pipelineLayout);
@@ -133,7 +159,8 @@ static void initPipelines(void)
         .renderPass = renderpass, 
         .layout     = pipelineLayout,
         .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-        .frontFace   = VK_FRONT_FACE_CLOCKWISE,
+        //.polygonMode = VK_POLYGON_MODE_LINE,
+        .frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .vertexDescription = tanto_r_GetVertexDescription3D_2Vec3(),
         .vertShader = SPVDIR"/template-vert.spv",
         .fragShader = SPVDIR"/template-frag.spv"
@@ -147,32 +174,52 @@ static void updateDescriptors(void)
 {
     for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
     {
-        uniformBufferRegion[i] = tanto_v_RequestBufferRegion(sizeof(UniformBuffer), 
+        // camera creation
+        cameraBuffers[i] = tanto_v_RequestBufferRegion(sizeof(Camera),
                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_GRAPHICS_TYPE);
-        memset(uniformBufferRegion[i].hostData, 0, sizeof(UniformBuffer));
-        UniformBuffer* uboData = (UniformBuffer*)(uniformBufferRegion[i].hostData);
+        Camera* camera = (Camera*)(cameraBuffers[i].hostData);
 
         Mat4 view = m_Ident_Mat4();
-        view = m_Translate_Mat4((Vec3){0, 0, -1}, &view);
 
-        uboData->matModel = m_Ident_Mat4();
-        uboData->matView  = view;
-        uboData->matProj  = m_BuildPerspective(0.001, 100);
+        camera->view = m_Translate_Mat4((Vec3){0, 0, -1}, &view);
+        camera->proj = m_BuildPerspective(0.001, 100);
 
-        VkDescriptorBufferInfo uboInfo = {
-            .buffer = uniformBufferRegion[i].buffer,
-            .offset = uniformBufferRegion[i].offset,
-            .range  = uniformBufferRegion[i].size
+        // xforms creation
+        xformBuffers[i] = tanto_v_RequestBufferRegion(sizeof(Xform), 
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_GRAPHICS_TYPE);
+
+        Xform* modelXform = (Xform*)(xformBuffers[i].hostData);
+
+        *modelXform = m_Ident_Mat4();
+
+        VkDescriptorBufferInfo camInfo = {
+            .buffer = cameraBuffers[i].buffer,
+            .offset = cameraBuffers[i].offset,
+            .range  = cameraBuffers[i].size
+        };
+
+        VkDescriptorBufferInfo xformInfo = {
+            .buffer = xformBuffers[i].buffer,
+            .offset = xformBuffers[i].offset,
+            .range  = xformBuffers[i].size
         };
 
         VkWriteDescriptorSet writes[] = {{
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstArrayElement = 0,
-            .dstSet = description[i].descriptorSets[R_DESC_SET_MAIN],
+            .dstSet = description[i].descriptorSets[DESC_SET_MAIN],
             .dstBinding = 0,
             .descriptorCount = 1,
             .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .pBufferInfo = &uboInfo
+            .pBufferInfo = &camInfo
+        },{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstArrayElement = 0,
+            .dstSet = description[i].descriptorSets[DESC_SET_MAIN],
+            .dstBinding = 1,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pBufferInfo = &xformInfo
         }};
 
         vkUpdateDescriptorSets(device, TANTO_ARRAY_SIZE(writes), writes, 0, NULL);
@@ -201,17 +248,21 @@ static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex)
         cmdBuf, 
         VK_PIPELINE_BIND_POINT_GRAPHICS, 
         pipelineLayout,
-        0, 1, &description[frameIndex].descriptorSets[R_DESC_SET_MAIN],
+        0, 1, &description[frameIndex].descriptorSets[DESC_SET_MAIN],
         0, NULL);
 
     vkCmdBeginRenderPass(cmdBuf, &rpassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    tanto_r_BindPrim(cmdBuf, &triangle);
-
     vkCmdPushConstants(cmdBuf, pipelineLayout, 
-            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstant), &pushConst);
+            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec4), &pushConst);
 
-    vkCmdDrawIndexed(cmdBuf, triangle.indexCount, 1, 0, 0, 0);
+    assert(scene->lightCount > 0);
+
+    vkCmdPushConstants(cmdBuf, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Vec4), sizeof(Vec4), &scene->lights[0]); 
+
+    tanto_r_DrawPrim(cmdBuf, &triangle);
+
+    tanto_r_DrawScene(cmdBuf, scene);
 
     vkCmdEndRenderPass(cmdBuf);
 }
@@ -236,8 +287,50 @@ static void onSwapchainRecreate(void)
     initFramebuffers();
 }
 
+static void updateCamera(uint32_t index)
+{
+    //printf("Updating Camera: index %d\n", index);
+    //printf("camera\n");
+    //coal_PrintMat4(&scene->camera.xform);
+    const Mat4 proj = m_BuildPerspective(0.001, 100);
+    const Mat4 view = m_Invert4x4(&scene->camera.xform);
+    Camera* uboCam = (Camera*)cameraBuffers[index].hostData;
+    uboCam->view = view;
+    uboCam->proj = proj;
+}
+
+static void syncScene(void)
+{
+    if (scene->dirt)
+    {
+        if (scene->dirt & TANTO_S_CAMERA_BIT)
+        {
+            cameraNeedsUpdate = TANTO_FRAME_COUNT;
+        }
+        if (scene->dirt & TANTO_S_LIGHTS_BIT)
+        {
+            tanto_r_FramesNeedingUpdate = TANTO_FRAME_COUNT;
+        }
+    }
+    if (cameraNeedsUpdate)
+    {
+        uint32_t i = tanto_r_GetCurrentFrameIndex();
+        tanto_r_WaitOnFrame(i);
+        updateCamera(i);
+        cameraNeedsUpdate--;
+    }
+    if (tanto_r_FramesNeedingUpdate)
+    {
+        uint32_t i = tanto_r_GetCurrentFrameIndex();
+        tanto_r_WaitOnFrame(i);
+        updateRenderCommands(i);
+        tanto_r_FramesNeedingUpdate--;
+    }
+}
+
 void r_InitRenderer(void)
 {
+    cameraNeedsUpdate = TANTO_FRAME_COUNT;
     initAttachments();
     initRenderPass();
     initFramebuffers();
@@ -248,19 +341,19 @@ void r_InitRenderer(void)
     tanto_r_RegisterSwapchainRecreationFn(onSwapchainRecreate);
 
     triangle = tanto_r_CreateTriangle();
-    pushConst.color = (Vec4){0.1, 0.3, 0.9, 1.};
+    pushConst.vec4_0 = (Vec4){0.1, 0.3, 0.9, 1.};
 }
 
 void r_Render(void)
 {
-    if (tanto_r_FramesNeedingUpdate)
-    {
-        uint32_t i = tanto_r_GetCurrentFrameIndex();
-        tanto_r_WaitOnFrame(i);
-        updateRenderCommands(i);
-        tanto_r_FramesNeedingUpdate--;
-    }
+    syncScene();
     tanto_r_SubmitFrame();
+}
+
+void r_BindScene(const Tanto_S_Scene* pScene)
+{
+    printf("Renderer: Scene bound.\n");
+    scene = pScene;
 }
 
 void r_CleanUp(void)
