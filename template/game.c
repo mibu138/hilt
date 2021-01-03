@@ -49,7 +49,7 @@ void g_Init(void)
     parms.shouldRun = true;
     t = 0.0;
     slider0 = tanto_u_CreateSlider(0, 40, NULL);
-    tanto_s_CreateSimpleScene(&scene);
+    tanto_s_CreateSimpleScene2(&scene);
     r_BindScene(&scene);
 }
 

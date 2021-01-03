@@ -27,12 +27,17 @@ static VkRenderPass  renderpass;
 static VkFramebuffer framebuffers[TANTO_FRAME_COUNT];
 static VkPipeline    mainPipeline;
 
+#define MAX_PRIM_COUNT 16
+
 static Tanto_V_BufferRegion cameraBuffers[TANTO_FRAME_COUNT];
-static Tanto_V_BufferRegion xformBuffers[TANTO_FRAME_COUNT];
+static Tanto_V_BufferRegion xformsBuffers[TANTO_FRAME_COUNT];
 
 static int cameraNeedsUpdate;
+static int xformsNeedsUpdate;
 
-typedef Mat4 Xform;
+typedef struct {
+    Mat4 xform[MAX_PRIM_COUNT];
+} Xforms;
 
 typedef struct {
     Mat4 view;
@@ -185,12 +190,15 @@ static void updateDescriptors(void)
         camera->proj = m_BuildPerspective(0.001, 100);
 
         // xforms creation
-        xformBuffers[i] = tanto_v_RequestBufferRegion(sizeof(Xform), 
+        xformsBuffers[i] = tanto_v_RequestBufferRegion(sizeof(Xforms), 
                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_GRAPHICS_TYPE);
 
-        Xform* modelXform = (Xform*)(xformBuffers[i].hostData);
+        Xforms* modelXform = (Xforms*)(xformsBuffers[i].hostData);
 
-        *modelXform = m_Ident_Mat4();
+        for (int i = 0; i < MAX_PRIM_COUNT; i++) 
+        {
+            modelXform->xform[i] = m_Ident_Mat4();
+        }
 
         VkDescriptorBufferInfo camInfo = {
             .buffer = cameraBuffers[i].buffer,
@@ -199,9 +207,9 @@ static void updateDescriptors(void)
         };
 
         VkDescriptorBufferInfo xformInfo = {
-            .buffer = xformBuffers[i].buffer,
-            .offset = xformBuffers[i].offset,
-            .range  = xformBuffers[i].size
+            .buffer = xformsBuffers[i].buffer,
+            .offset = xformsBuffers[i].offset,
+            .range  = xformsBuffers[i].size
         };
 
         VkWriteDescriptorSet writes[] = {{
@@ -299,6 +307,12 @@ static void updateCamera(uint32_t index)
     uboCam->proj = proj;
 }
 
+static void updateXform(uint32_t frameIndex, uint32_t primIndex)
+{
+    Xforms* xforms = (Xforms*)xformsBuffers[frameIndex].hostData;
+    xforms->xform[primIndex] = scene->xforms[primIndex];
+}
+
 static void syncScene(void)
 {
     if (scene->dirt)
@@ -311,6 +325,8 @@ static void syncScene(void)
         {
             tanto_r_FramesNeedingUpdate = TANTO_FRAME_COUNT;
         }
+        if (scene->dirt & TANTO_S_XFORMS_BIT)
+            xformsNeedsUpdate = TANTO_FRAME_COUNT;
     }
     if (cameraNeedsUpdate)
     {
@@ -318,6 +334,17 @@ static void syncScene(void)
         tanto_r_WaitOnFrame(i);
         updateCamera(i);
         cameraNeedsUpdate--;
+    }
+    if (xformsNeedsUpdate)
+    {
+        uint32_t f = tanto_r_GetCurrentFrameIndex();
+        tanto_r_WaitOnFrame(f);
+        for (int i = 0; i < scene->primCount; i++) 
+        {
+            printf("Updating xform for frame %d prim %d\n", f, i);
+            updateXform(f, i);
+        }
+        xformsNeedsUpdate--;
     }
     if (tanto_r_FramesNeedingUpdate)
     {
@@ -331,6 +358,7 @@ static void syncScene(void)
 void r_InitRenderer(void)
 {
     cameraNeedsUpdate = TANTO_FRAME_COUNT;
+    xformsNeedsUpdate = TANTO_FRAME_COUNT;
     initAttachments();
     initRenderPass();
     initFramebuffers();

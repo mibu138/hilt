@@ -16,7 +16,8 @@ layout(set = 0, binding = 1) uniform Model {
 } model;
 
 layout(push_constant) uniform PushConstant {
-    layout(offset = 0) vec4 color;
+    vec3 color;
+    uint id;
 } push;
 
 void main()
