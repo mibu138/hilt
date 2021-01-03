@@ -49,7 +49,6 @@ typedef struct {
     Vec4 vec4_1;
 } PushConstant;
 
-static Tanto_R_Primitive    triangle;
 static const Tanto_S_Scene* scene;
 static PushConstant         pushConst;
 
@@ -261,6 +260,7 @@ static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex)
 
     vkCmdBeginRenderPass(cmdBuf, &rpassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+    // useful as a fallback material
     vkCmdPushConstants(cmdBuf, pipelineLayout, 
             VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec4), &pushConst);
 
@@ -268,9 +268,14 @@ static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex)
 
     vkCmdPushConstants(cmdBuf, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Vec4), sizeof(Vec4), &scene->lights[0]); 
 
-    tanto_r_DrawPrim(cmdBuf, &triangle);
+    assert(scene->primCount < MAX_PRIM_COUNT);
 
-    tanto_r_DrawScene(cmdBuf, scene);
+    for (int p = 0; p < scene->primCount; p++) 
+    {
+        vkCmdPushConstants(cmdBuf, pipelineLayout, 
+                VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec3), &scene->materials[p].color);
+        tanto_r_DrawPrim(cmdBuf, &scene->prims[p]);
+    }
 
     vkCmdEndRenderPass(cmdBuf);
 }
@@ -368,8 +373,7 @@ void r_InitRenderer(void)
 
     tanto_r_RegisterSwapchainRecreationFn(onSwapchainRecreate);
 
-    triangle = tanto_r_CreateTriangle();
-    pushConst.vec4_0 = (Vec4){0.1, 0.3, 0.9, 1.};
+    pushConst.vec4_0 = (Vec4){1, 1, 1, 1.};
 }
 
 void r_Render(void)
