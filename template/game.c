@@ -25,9 +25,9 @@ static float t;
 
 static void updateCamera(float dt)
 {
-    Vec3 pos = (Vec3){0, 1, 2};
+    Vec3 pos = (Vec3){0, 1.3, 2};
     pos = m_RotateY_Vec3(dt, &pos);
-    Mat4 m = m_LookAt(&pos, &(Vec3){0, 0, 0}, &(Vec3){0, 1, 0});
+    Mat4 m = m_LookAt(&pos, &(Vec3){0, 0.5, 0}, &(Vec3){0, 1, 0});
     scene.camera.xform = m;
     scene.dirt |= TANTO_S_CAMERA_BIT;
 }
@@ -51,6 +51,7 @@ void g_Init(void)
     slider0 = tanto_u_CreateSlider(0, 40, NULL);
     tanto_s_CreateSimpleScene2(&scene);
     r_BindScene(&scene);
+    updateCamera(1);
 }
 
 bool g_Responder(const Tanto_I_Event *event)
@@ -88,7 +89,6 @@ void g_Update(void)
 {
     scene.dirt = 0; // clean
     t += 0.016;
-    updateCamera(t);
     updateLights();
 }
 

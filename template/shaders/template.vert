@@ -12,7 +12,7 @@ layout(set = 0, binding = 0) uniform Camera {
 } camera;
 
 layout(set = 0, binding = 1) uniform Model {
-    mat4 xform;
+    mat4 xform[2];
 } model;
 
 layout(push_constant) uniform PushConstant {
@@ -22,7 +22,7 @@ layout(push_constant) uniform PushConstant {
 
 void main()
 {
-    gl_Position = camera.proj * camera.view * model.xform * vec4(pos, 1.0);
+    gl_Position = camera.proj * camera.view * model.xform[push.id] * vec4(pos, 1.0);
     outColor = push.color.rgb;
-    outNormal = norm;
+    outNormal = (model.xform[push.id] * vec4(norm, 1.0)).xyz; // this is fine as long as we only allow uniform scales
 }

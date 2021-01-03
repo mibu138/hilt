@@ -32,8 +32,9 @@ static VkPipeline    mainPipeline;
 static Tanto_V_BufferRegion cameraBuffers[TANTO_FRAME_COUNT];
 static Tanto_V_BufferRegion xformsBuffers[TANTO_FRAME_COUNT];
 
-static int cameraNeedsUpdate;
-static int xformsNeedsUpdate;
+static uint8_t cameraNeedUpdate;
+static uint8_t framesNeedUpdate;
+static uint8_t xformsNeedUpdate;
 
 typedef struct {
     Mat4 xform[MAX_PRIM_COUNT];
@@ -234,7 +235,7 @@ static void updateDescriptors(void)
 
 static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex)
 {
-    VkClearValue clearValueColor = {0.002f, 0.023f, 0.009f, 1.0f};
+    VkClearValue clearValueColor = {0.002f, 0.001f, 0.009f, 1.0f};
     VkClearValue clearValueDepth = {1.0, 0};
 
     VkClearValue clears[] = {clearValueColor, clearValueDepth};
@@ -260,7 +261,6 @@ static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex)
     vkCmdBeginRenderPass(cmdBuf, &rpassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     Vec4 debugColor = (Vec4){1, 0, 0.5};
-    // useful as a fallback material
     vkCmdPushConstants(cmdBuf, pipelineLayout, 
             VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec4), &debugColor);
 
@@ -268,12 +268,13 @@ static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex)
 
     vkCmdPushConstants(cmdBuf, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(Vec4), sizeof(Vec4), &scene->lights[0]); 
 
+    assert(sizeof(Vec4) == sizeof(Tanto_S_Matrial));
     assert(scene->primCount < MAX_PRIM_COUNT);
 
     for (int p = 0; p < scene->primCount; p++) 
     {
         vkCmdPushConstants(cmdBuf, pipelineLayout, 
-                VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec3), &scene->materials[p].color);
+                VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec4), &scene->materials[p]);
         tanto_r_DrawPrim(cmdBuf, &scene->prims[p]);
     }
 
@@ -298,6 +299,7 @@ static void onSwapchainRecreate(void)
     initAttachments();
     initPipelines();
     initFramebuffers();
+    framesNeedUpdate = TANTO_FRAME_COUNT;
 }
 
 static void updateCamera(uint32_t index)
@@ -324,23 +326,23 @@ static void syncScene(void)
     {
         if (scene->dirt & TANTO_S_CAMERA_BIT)
         {
-            cameraNeedsUpdate = TANTO_FRAME_COUNT;
+            cameraNeedUpdate = TANTO_FRAME_COUNT;
         }
         if (scene->dirt & TANTO_S_LIGHTS_BIT)
         {
-            tanto_r_FramesNeedingUpdate = TANTO_FRAME_COUNT;
+            framesNeedUpdate = TANTO_FRAME_COUNT;
         }
         if (scene->dirt & TANTO_S_XFORMS_BIT)
-            xformsNeedsUpdate = TANTO_FRAME_COUNT;
+            xformsNeedUpdate = TANTO_FRAME_COUNT;
     }
-    if (cameraNeedsUpdate)
+    if (cameraNeedUpdate)
     {
         uint32_t i = tanto_r_GetCurrentFrameIndex();
         tanto_r_WaitOnFrame(i);
         updateCamera(i);
-        cameraNeedsUpdate--;
+        cameraNeedUpdate--;
     }
-    if (xformsNeedsUpdate)
+    if (xformsNeedUpdate)
     {
         uint32_t f = tanto_r_GetCurrentFrameIndex();
         tanto_r_WaitOnFrame(f);
@@ -349,21 +351,21 @@ static void syncScene(void)
             printf("Updating xform for frame %d prim %d\n", f, i);
             updateXform(f, i);
         }
-        xformsNeedsUpdate--;
+        xformsNeedUpdate--;
     }
-    if (tanto_r_FramesNeedingUpdate)
+    if (framesNeedUpdate)
     {
         uint32_t i = tanto_r_GetCurrentFrameIndex();
         tanto_r_WaitOnFrame(i);
         updateRenderCommands(i);
-        tanto_r_FramesNeedingUpdate--;
+        framesNeedUpdate--;
     }
 }
 
 void r_InitRenderer(void)
 {
-    cameraNeedsUpdate = TANTO_FRAME_COUNT;
-    xformsNeedsUpdate = TANTO_FRAME_COUNT;
+    cameraNeedUpdate = TANTO_FRAME_COUNT;
+    xformsNeedUpdate = TANTO_FRAME_COUNT;
     initAttachments();
     initRenderPass();
     initFramebuffers();
