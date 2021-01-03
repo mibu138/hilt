@@ -50,7 +50,6 @@ typedef struct {
 } PushConstant;
 
 static const Tanto_S_Scene* scene;
-static PushConstant         pushConst;
 
 static VkDescriptorSetLayout descriptorSetLayouts[TANTO_MAX_DESCRIPTOR_SETS];
 static Tanto_R_Description   description[TANTO_FRAME_COUNT];
@@ -260,9 +259,10 @@ static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex)
 
     vkCmdBeginRenderPass(cmdBuf, &rpassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+    Vec4 debugColor = (Vec4){1, 0, 0.5};
     // useful as a fallback material
     vkCmdPushConstants(cmdBuf, pipelineLayout, 
-            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec4), &pushConst);
+            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Vec4), &debugColor);
 
     assert(scene->lightCount > 0);
 
@@ -372,8 +372,6 @@ void r_InitRenderer(void)
     updateDescriptors();
 
     tanto_r_RegisterSwapchainRecreationFn(onSwapchainRecreate);
-
-    pushConst.vec4_0 = (Vec4){1, 1, 1, 1.};
 }
 
 void r_Render(void)
