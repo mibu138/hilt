@@ -173,7 +173,6 @@ static void initPipelines(void)
     tanto_r_CreateGraphicsPipelines(1, &graphPipeInfo, &mainPipeline);
 }
 
-// descriptors that do only need to have update called once and can be updated on initialization
 static void updateDescriptors(void)
 {
     for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
@@ -366,6 +365,8 @@ void r_InitRenderer(void)
 {
     cameraNeedUpdate = TANTO_FRAME_COUNT;
     xformsNeedUpdate = TANTO_FRAME_COUNT;
+    framesNeedUpdate = TANTO_FRAME_COUNT;
+
     initAttachments();
     initRenderPass();
     initFramebuffers();
