@@ -40,7 +40,7 @@ void template_Init(void)
 
 void template_StartLoop(void)
 {
-    Tanto_LoopData loopData = tanto_CreateLoopData(NS_TARGET, 0, 1);
+    Tanto_LoopData loopData = tanto_CreateLoopData(NS_TARGET, 0, 0);
 
     parms.shouldRun = true;
 

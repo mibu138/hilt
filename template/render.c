@@ -65,6 +65,24 @@ typedef enum {
     DESC_SET_MAIN,
 } DescriptorSetId;
 
+// declarations for overview and navigation
+static void initAttachments(void);
+static void initRenderPass(void);
+static void initFramebuffers(void);
+static void initDescriptorSetsAndPipelineLayouts(void);
+static void initPipelines(void);
+static void updateDescriptors(void);
+static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex);
+static void updateRenderCommands(const uint32_t frameIndex);
+static void onSwapchainRecreate(void);
+static void updateCamera(uint32_t index);
+static void updateXform(uint32_t frameIndex, uint32_t primIndex);
+static void syncScene(void);
+void r_InitRenderer(void);
+void r_Render(void);
+void r_BindScene(const Tanto_S_Scene* pScene);
+void r_CleanUp(void);
+
 // TODO: we should implement a way to specify the offscreen renderpass format at initialization
 static void initAttachments(void)
 {
@@ -165,7 +183,7 @@ static void initPipelines(void)
         .sampleCount = VK_SAMPLE_COUNT_1_BIT,
         //.polygonMode = VK_POLYGON_MODE_LINE,
         .frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-        .vertexDescription = tanto_r_GetVertexDescription3D_2Vec3(),
+        .vertexDescription = tanto_r_GetVertexDescription3D_3Vec3(),
         .vertShader = SPVDIR"/template-vert.spv",
         .fragShader = SPVDIR"/template-frag.spv"
     };
@@ -179,7 +197,7 @@ static void updateDescriptors(void)
     {
         // camera creation
         cameraBuffers[i] = tanto_v_RequestBufferRegion(sizeof(Camera),
-                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_GRAPHICS_TYPE);
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_TYPE);
         Camera* camera = (Camera*)(cameraBuffers[i].hostData);
 
         Mat4 view = m_Ident_Mat4();
@@ -189,7 +207,7 @@ static void updateDescriptors(void)
 
         // xforms creation
         xformsBuffers[i] = tanto_v_RequestBufferRegion(sizeof(Xforms), 
-                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_GRAPHICS_TYPE);
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_TYPE);
 
         Xforms* modelXform = (Xforms*)(xformsBuffers[i].hostData);
 

@@ -52,7 +52,7 @@ tanto:
 
 .PHONY: coal
 coal:
-	make -C ../../coal
+	make -C coal
 
 bin: main.c $(OBJS) $(DEPS) shaders
 	$(CC) $(CFLAGS) $(INFLAGS) $(LDFLAGS) $(OBJS) $< -o $(BIN)/$(NAME) $(LIBS)
