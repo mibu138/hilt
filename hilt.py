@@ -9,7 +9,7 @@ name = args.name
 
 if os.path.isdir(name):
     r = input("Directory " + name + " already exists. Replace it? Y/n: ")
-    if (r is 'Y'): shutil.rmtree(name)
+    if (r == 'Y'): shutil.rmtree(name)
     else: 
         print("Abort.")
         exit()
