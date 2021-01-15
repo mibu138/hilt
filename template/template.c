@@ -48,16 +48,11 @@ void template_StartLoop(void)
     {
         tanto_FrameStart(&loopData);
 
-        tanto_r_RequestFrame();
-
         tanto_i_GetEvents();
         tanto_i_ProcessEvents();
 
         g_Update();
         r_Render();
-
-        tanto_u_Render();
-        tanto_r_PresentFrame();
 
         tanto_FrameEnd(&loopData);
     }

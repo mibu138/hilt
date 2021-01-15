@@ -11,6 +11,7 @@
 #include <tanto/r_render.h>
 #include <tanto/v_video.h>
 #include <tanto/t_def.h>
+#include <tanto/u_ui.h>
 #include <tanto/t_utils.h>
 #include <tanto/r_pipeline.h>
 #include <tanto/r_raytrace.h>
@@ -20,6 +21,8 @@
 #include <vulkan/vulkan_core.h>
 
 #define SPVDIR "./shaders/spv"
+
+typedef Tanto_V_Command Command;
 
 static Tanto_V_Image renderTargetDepth;
 
@@ -52,6 +55,8 @@ typedef struct {
 
 static const Tanto_S_Scene* scene;
 
+static Command renderCommands[TANTO_FRAME_COUNT];
+
 static VkDescriptorSetLayout descriptorSetLayouts[TANTO_MAX_DESCRIPTOR_SETS];
 static Tanto_R_Description   description[TANTO_FRAME_COUNT];
 
@@ -65,6 +70,8 @@ typedef enum {
     DESC_SET_MAIN,
 } DescriptorSetId;
 
+static uint32_t graphicsQueueFamilyIndex;
+
 // declarations for overview and navigation
 static void initAttachments(void);
 static void initRenderPass(void);
@@ -77,11 +84,7 @@ static void updateRenderCommands(const uint32_t frameIndex);
 static void onSwapchainRecreate(void);
 static void updateCamera(uint32_t index);
 static void updateXform(uint32_t frameIndex, uint32_t primIndex);
-static void syncScene(void);
-void r_InitRenderer(void);
-void r_Render(void);
-void r_BindScene(const Tanto_S_Scene* pScene);
-void r_CleanUp(void);
+static void syncScene(const uint32_t frameIndex);
 
 // TODO: we should implement a way to specify the offscreen renderpass format at initialization
 static void initAttachments(void)
@@ -92,7 +95,8 @@ static void initAttachments(void)
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
         VK_IMAGE_USAGE_SAMPLED_BIT,
         VK_IMAGE_ASPECT_DEPTH_BIT,
-        VK_SAMPLE_COUNT_1_BIT);
+        VK_SAMPLE_COUNT_1_BIT,
+        graphicsQueueFamilyIndex);
 }
 
 static void initRenderPass(void)
@@ -197,7 +201,7 @@ static void updateDescriptors(void)
     {
         // camera creation
         cameraBuffers[i] = tanto_v_RequestBufferRegion(sizeof(Camera),
-                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_TYPE);
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_GRAPHICS_TYPE);
         Camera* camera = (Camera*)(cameraBuffers[i].hostData);
 
         Mat4 view = m_Ident_Mat4();
@@ -207,7 +211,7 @@ static void updateDescriptors(void)
 
         // xforms creation
         xformsBuffers[i] = tanto_v_RequestBufferRegion(sizeof(Xforms), 
-                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_TYPE);
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, TANTO_V_MEMORY_HOST_GRAPHICS_TYPE);
 
         Xforms* modelXform = (Xforms*)(xformsBuffers[i].hostData);
 
@@ -300,14 +304,16 @@ static void mainRender(const VkCommandBuffer cmdBuf, const uint32_t frameIndex)
 
 static void updateRenderCommands(const uint32_t frameIndex)
 {
-    Tanto_R_Frame* frame = tanto_r_GetFrame(frameIndex);
-    vkResetCommandPool(device, frame->command.commandPool, 0);
-    VkCommandBufferBeginInfo cbbi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    V_ASSERT( vkBeginCommandBuffer(frame->command.commandBuffer, &cbbi) );
+    tanto_v_ResetCommand(&renderCommands[frameIndex]);
 
-    mainRender(frame->command.commandBuffer, frameIndex);
+    VkCommandBuffer cmdBuf = renderCommands[frameIndex].buffer;
 
-    V_ASSERT( vkEndCommandBuffer(frame->command.commandBuffer) );
+    tanto_v_BeginCommandBuffer(cmdBuf);
+
+    mainRender(cmdBuf, frameIndex);
+
+    tanto_v_EndCommandBuffer(cmdBuf);
+
 }
 
 static void onSwapchainRecreate(void)
@@ -337,7 +343,7 @@ static void updateXform(uint32_t frameIndex, uint32_t primIndex)
     xforms->xform[primIndex] = scene->xforms[primIndex];
 }
 
-static void syncScene(void)
+static void syncScene(const uint32_t frameIndex)
 {
     if (scene->dirt)
     {
@@ -354,27 +360,21 @@ static void syncScene(void)
     }
     if (cameraNeedUpdate)
     {
-        uint32_t i = tanto_r_GetCurrentFrameIndex();
-        tanto_r_WaitOnFrame(i);
-        updateCamera(i);
+        updateCamera(frameIndex);
         cameraNeedUpdate--;
     }
     if (xformsNeedUpdate)
     {
-        uint32_t f = tanto_r_GetCurrentFrameIndex();
-        tanto_r_WaitOnFrame(f);
         for (int i = 0; i < scene->primCount; i++) 
         {
-            printf("Updating xform for frame %d prim %d\n", f, i);
-            updateXform(f, i);
+            printf("Updating xform for frame %d prim %d\n", frameIndex, i);
+            updateXform(frameIndex, i);
         }
         xformsNeedUpdate--;
     }
     if (framesNeedUpdate)
     {
-        uint32_t i = tanto_r_GetCurrentFrameIndex();
-        tanto_r_WaitOnFrame(i);
-        updateRenderCommands(i);
+        updateRenderCommands(frameIndex);
         framesNeedUpdate--;
     }
 }
@@ -384,6 +384,11 @@ void r_InitRenderer(void)
     cameraNeedUpdate = TANTO_FRAME_COUNT;
     xformsNeedUpdate = TANTO_FRAME_COUNT;
     framesNeedUpdate = TANTO_FRAME_COUNT;
+
+    for (int i = 0; i < TANTO_FRAME_COUNT; i++) 
+    {
+        renderCommands[i] = tanto_v_CreateCommand(TANTO_V_QUEUE_GRAPHICS_TYPE);
+    }
 
     initAttachments();
     initRenderPass();
@@ -397,8 +402,14 @@ void r_InitRenderer(void)
 
 void r_Render(void)
 {
-    syncScene();
-    tanto_r_SubmitFrame();
+    uint32_t f = tanto_r_RequestFrame();
+    tanto_v_WaitForFence(&renderCommands[f].fence);
+    syncScene(f);
+    VkPipelineStageFlags stageFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkSemaphore* waitSemaphore = NULL;
+    tanto_v_SubmitGraphicsCommand(0, &stageFlags, waitSemaphore, renderCommands[f].fence, &renderCommands[f]);
+    VkSemaphore* s = tanto_u_Render(&renderCommands[f].semaphore);
+    tanto_r_PresentFrame(*s);
 }
 
 void r_BindScene(const Tanto_S_Scene* pScene)
